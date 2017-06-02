@@ -1,0 +1,549 @@
+\input squat-mac
+
+\title{On adding quaternions to Scheme}
+
+\ifx\shipout\undefined
+\centerline{\urlh{squat.tar.gz}{Download}}
+\fi
+
+\centerline{\urlh{http://www.cs.rice.edu/~dorai}{Dorai Sitaram}}
+
+\bigskip
+
+\n The numbers supported by the Scheme programming
+language form a tower, where the set of numbers at each
+level is a subset of the set at the level above.  The
+levels are, respectively: integers, rationals,
+reals,\f{In practice, an implementation does not
+differentiate between rationals and reals.}
+and complex numbers.
+This article investigates the potential extension of
+Scheme's numeric tower upward to include {\em
+quaternions}
+\cite{onquat}, a set of hypercomplex numbers that
+properly includes the complex numbers, and by
+extension, all the numbers below.
+
+\section{Quaternions}
+
+A quaternion $q$ is a 4-tuple $(w,x,y,z)$, where $w$,
+$x$, $y$, and $z$ are real.  To give it the aspect of a
+number, it is written $w + ix + jy + kz$, where $i$,
+$j$, and $k$ are {\em imaginary units} that satisfy the
+conditions $ii = jj = kk = -1$, $ij = -ji = k$, $jk =
+-kj = i$, and $ki = -ik = j$.\f{Invoking the
+associativity of multiplication, these conditions can
+be more succinctly stated as $ii = jj = kk = ijk =
+-1$.}   Clearly, multiplication on quaternions does not
+commute.  $w$ is $q$'s real (or scalar) part, and
+$x$, $y$, and $z$ are  its $i$-, $j$-, and
+$k$-part respectively.  $ix + jy + kz$ is 
+$q$'s vector part.  A quaternion with zero $j$- and
+$k$-parts is an ordinary complex number, and if,
+further, its $i$-part is also zero, it is just a real
+number.  A quaternion with zero real part is called a
+vector quaternion or, simply, vector.\f{These are
+indeed the vectors familiarly used in physics to
+represent 3-dimensional quantities.  They are not be confused
+with Scheme's one-dimensional array data type called \q{vector}.} 
+
+Notation:  We will use $q_n$ (where $n$ is either an
+integer or absent) interchangeably with
+$w_n+ix_n+jy_n+kz_n$.  $q_n$'s vector part
+$ix_n+jy_n+kz_n$ is also written $v_n$ and its unit
+vector (see below) is written $u_n$.  \q{|meta[E] =>
+|meta[e]} means that the Scheme expression $E$
+evaluates to a Scheme value $e$.  In order to prevent
+confusion, we add a subscript $q$ to the name of a
+Scheme procedure that has been made quaternion-aware.
+For example, \q{exp} is the exponential procedure
+described in R5RS~\cite{r5rs}; whereas \q{exp|Q}
+is the same procedure that has been extended to accept
+a quaternion argument.
+
+\section{Lexical representation of quaternions}
+
+Recall that Scheme complex numbers that are not also
+real are represented in {\em rectangular} (or cartesian) notation as 
+\q{|meta[a]+|meta[b]i} or
+\q{|meta[a]-|meta[b]i}, where $a$ is optional (for
+numbers that are purely imaginary) or real, and $b$ is
+a non-negative real.  Examples: 
+
+\q{
++i
+-i
++2i
+-2i
+3+4i
+}
+
+\n (The sign is never
+optional, eg, $i$ must be represented as \p{+i} rather
+than \p{i}, which latter is parsed as an identifier.)
+We can naturally extend this to 
+quaternions: thus $q$ above is written
+\q{|meta[w]+|meta[x]i+|meta[y]j+|meta[z]k}.
+The pluses can be
+minuses, and any part that is zero may be omitted, with
+the proviso that a vector quaternion must always start
+with a sign or an explicit zero real part, in order to prevent being mistaken for an
+identifier.  Examples of some Scheme quaternions that
+are not also complex numbers: 
+
+\q{
++j
++3k
+-2+3i-3k
+-6i-6k
+3-4i+5j+6k
+}
+
+\section{Polar notation}
+
+Scheme also permits users to enter complex numbers in a
+notation that uses {\em polar} coordinates, viz, 
+$\mu${\tt @}$\theta$, where $\mu$ and $\theta$ are real.
+A corresponding notation for quaternions 
+is also possible.  For example,
+$q = w + ix + jy + kz$ has the polar (or spherical or
+curvilinear) coordinates 
+$\mu$, $\theta$, $\phi$, $\psi$, which are related to the
+rectangular coordinates as follows:\f{The rectangular
+coordinates can be deduced from the polar as
+follows:
+$$
+\eqalign{
+w &= \mu \cos \theta \cr
+x &= \mu \sin \theta \cos \phi \cr
+y &= \mu \sin \theta \sin \phi \cos \psi \cr
+z &= \mu \sin \theta \sin \phi \sin \psi
+}
+$$}
+
+$$
+\eqalign{
+\mu &= \sqrt{w^2 + x^2 + y^2 + z^2} \cr
+\theta &= \tan^{-1} (\sqrt{x^2 + y^2 + z^2} / w)\cr
+\phi &=  \tan^{-1} (\sqrt{y^2 + z^2} / x) \cr
+\psi &= \tan^{-1} (z/y)
+}
+$$
+
+\n $\mu$, $\theta$, $\phi$, $\psi$ are respectively the
+{\em magnitude}, {\em
+angle}, {\em colatitude}, and {\em longitude}
+of $q$.\f{The more usual terms for {\em magnitude} and {\em angle}
+are {\em modulus} and {\em amplitude} respectively, but 
+we wish to remain compatible with Scheme's already established
+names for complex numbers.} 
+Extending Scheme's notation for complex numbers,
+$q$ may be represented as
+$\mu\,${\tt @}$\,\theta\,${\tt\%}$\,\phi\,${\tt\&}$\,\psi$.  Any zero angle may
+be omitted along with its prefix.  If the
+colatitude and longitude are both zero, the number is
+complex. 
+
+As for complex numbers, polar notation
+is used only to {\em enter} quaternions.  Scheme outputs
+quaternion values exclusively in rectangular.  Thus,
+
+\q{
+-3@4%-5&6
+|evalsto
+1.960930862590836+0.6440287493492101i+2.0904336369493484-0.6083291310311992k
+}
+
+\section{Building quaternions and taking them apart}
+
+The predicate \q{quaternion?} checks if its argument is
+a quaternion.  Because quaternions now form the pinnacle of Scheme's
+numeric tower, \q{quaternion?} returns true (\q{#t}) for any
+number, and thus agrees with Scheme's \q{number?} predicate.
+
+The Scheme complex-number procedures \q{real-part},
+\q{imag-part}, \q{magnitude}, and \q{angle} are
+extended to accept quaternion arguments.  They return,
+respectively, the real part, the $i$-part, the magnitude,
+and the angle, of their argument.  To these are
+added four new related procedures: \q{jmag-part},
+\q{kmag-part}, \q{colatitude}, and \q{longitude}
+return, respectively, the $j$-part, $k$-part, colatitude, and
+longitude of their argument.
+
+The procedure \q{vector-part} returns the vector part of its
+argument.
+
+The procedures \q{make-rectangular} and
+\q{make-polar} are extended to take two extra arguments
+in order to produce quaternions that aren't just complex numbers.
+
+\q{
+(make-rectangular|Q 3 4 5 6)
+|evalsto 3+4i+5j+6k
+
+(make-polar|Q -3 4 -5 6)
+|evalsto
+1.960930862590836+0.6440287493492101i+2.0904336369493484-0.6083291310311992k
+}
+
+\n Note that the result {\em printed} by Scheme is the rectangular
+equivalent of the polar coordinates specified.  
+
+Every quaternion $q$ has a special vector quaternion $u$
+called its {\em unit vector}, which is defined as
+
+$$
+{{ix + jy + kz} \over
+\sqrt{x^2+y^2+z^2}
+}
+$$
+
+\n In Scheme,
+
+\q{
+(define unit-vector
+  (lambda (q)
+    (*|Q (vector-part q)
+       (/ (magnitude|Q q)))))
+}
+
+\n The magnitude of a unit vector is of course unity.
+
+
+\section{Arithmetic}
+
+Scheme numerical procedures that work on complex
+numbers can be naturally extended to accept quaternion
+arguments.\f{Procedures like \q{<}, \q{>}, \q{<=},
+\q{>=}, \q{positive?}, \q{negative?}, \q{min},
+\q{max}, \q{floor}, \q{ceiling}, \q{truncate},
+\q{round}, \q{rationalize} two-argument \q{atan},
+\q{make-rectangular} and \q{make-polar} are not defined
+for quaternions, but they are not defined for complex
+numbers either.}
+
+The procedures \q{=}, \q{+}, \q{-} extend in the expected manner for
+quaternion arguments ---
+they all operate on the parts severally.
+
+\q{
+(=|Q 3+4j 3+4j)      => #t
+(=|Q 3+4j 3+4j 3+4k) => #f
+(+|Q 3+4j 3+4j)      => 6+8j
+(+|Q 3+4j 3+4j 3+4k) => 9+8j+4k
+(-|Q 4+5j 2-3k)      => 2+8k
+(-|Q 2+3j-4k)        => -2-3j+4k
+}
+
+\n The multiplication procedure \q{*|Q} (using the identities 
+$ii = jj = kk = ijk = -1$) can be implemented as
+follows: 
+
+$$
+\eqalign{
+q_1 q_2 = &  \quad 
+   (w_1 w_2 - x_1 x_2 - y_1 y_2 - z_1 z_2)  \cr
+&+ (w_1 x_2 + x_1 w_2 + y_1 z_2 - y_2 z_1)i  \cr
+&+ (w_1 y_2 + y_1 w_2 + z_1 x_2 - z_2 x_1)j \cr
+&+ (w_1 z_2 + z_1 w_2 + x_1 y_2 - x_2 y_1)k
+}
+$$
+
+\n 
+Example: 
+
+\q{
+(*|Q 4-3i+2j+6k 4+5i-7j+9k)
+|evalsto -9+68i+37j+71k
+}
+
+\n Generally, multiplication is not commutative.
+However if two quaternions have the same {\em unit
+vector} disregarding sign, they do commute on multiplication, and
+furthermore, their product has the same unit vector.
+The square of a unit vector (its product with itself) is $-1$.
+
+If $q_1$, $q_2$ are vector quaternions, ie,
+$w_1 = w_2 = 0$, then the real part of
+$q_1 q_2$ is the negative of the {\em dot product} $q_1 \cdot q_2$
+and the vector part of $q_1 q_2$ is the {\em cross product} $q_1
+\times q_2$.  
+
+\q{
+(define dot-product
+  (lambda (q1 q2)
+    (if (not (and (= (real-part|Q q1) 0)
+                  (= (real-part|Q q2) 0)))
+        (error 'dot-product "arguments must be vector quaternions")
+        (- (real-part|Q (*|Q q1 q2))))))
+
+(define cross-product
+  (lambda (q1 q2)
+    (if (not (and (= (real-part|Q q1) 0)
+                  (= (real-part|Q q2) 0)))
+        (error 'cross-product "arguments must be vector quaternions")
+        (vector-part (*|Q q1 q2)))))
+}
+
+\n If the imaginary parts of $q_1$ and $q_2$ are
+severally the negatives of each other, then the
+product $q_1 q_2$ is real.  Such $q_1$, $q_2$ are
+termed {\em conjugates} of each other.  They have the
+same magnitude, and their product is the square of that
+magnitude.
+
+\q{
+(define conjugate
+  (lambda (q)
+    (make-rectangular|Q
+      (real-part|Q q)
+      (- (imag-part|Q q))
+      (- (jmag-part q))
+      (- (kmag-part q)))))
+}
+
+\n We can use fact (1) to implement the {\em reciprocal} of a
+quaternion.  Multiply both numerator and 
+denominator of $1/q$  by $q$'s conjugate.  Unary \q{/}
+is the Scheme procedure for reciprocals.  Example:
+
+\q{
+(/|Q 8+3i+4j+5k)
+|evalsto 
+0.07017543859649122-0.02631578947368421i-0.03508771929824561j-0.043859649122807015k
+}
+
+Multiplication by the reciprocal leads to a definition
+of division.  Dividing $q_1$ by $q_2$ is viewed as
+multiplying $q_1$ by $q_2^{-1}$.
+The noncommutativity of
+multiplication allows a choice between putting the
+reciprocal before or after $q_1$.  Thus division from
+the left and from the right are different.  
+
+In keeping with the visual layout of Scheme's \q{/}
+procedure, we can define 
+\q{(/|Q q1 q2 ...)} with 
+\q{(*|Q q1 (/|Q q2) ...)}, but to prevent confusion,
+it is best to always use
+explicit reciprocals (unary \q{/|Q}) and multiplication
+(\q{*|Q}).
+
+\section{Exponential and logarithmic functions}
+
+As for complex numbers, we use the Maclaurin series to
+define quaternion extensions of the transcendental
+functions.
+Thus, for quaternion $q = w + uv$, where $uq$ is its unit
+vector and $w$ and $v$ are real, we can derive
+
+$$
+e^q = e^{w + u v} =  e^w(\cos v + u \sin v)
+$$
+
+\n $u$ functions much the same as $i$ for complex numbers.
+The difference from the complex case is that 
+$u$ depends on (ie, varies with) $q$, whereas $i$ is the same for all
+complex $z$.
+
+In Scheme,
+
+\q{
+(define exp|Q
+  (lambda (q)
+    (let ((w (real-part|Q q))
+          (u (unit-vector q))
+          (v (magnitude|Q (vector-part q))))
+      (*|Q (exp w)
+         (+|Q (cos v) (*|Q u (sn v)))))))
+}
+
+\n Note that the unit vectors of $q$ and $e^q$
+are the same, disregarding sign.  The inverse of
+of the exponential function is the natural logarithm,\f{Following Scheme
+practice, we use $\log$ to mean $\log_e$ rather than
+$\log_{10}$.} and is
+given by:
+
+
+$$
+\log (w+uv) = {1\over 2}\log(w^2+v^2) + u \tan^{-1} (v/w)
+$$
+
+\n (where the $\log$ on the right only need be defined 
+for positive reals).  To make the $\log$ function single-valued,
+we choose $\tan^{-1} (v/w)$ between $-\pi$ adn $\pi$.  In Scheme,
+
+\q{
+(define log|Q
+  (lambda (q)
+    (let ((w (real-part|Q q))
+          (u (unit-vector q))
+          (v (magnitude|Q (vector-part q))))
+      (+|Q (*|Q 1/2 (log (magnitude|Q q)))
+         (*|Q u (atan v w))))))
+}
+
+\n We can use \q{log|Q} to define \q{expt|Q}, since:
+$$
+q_1 ^{q_2} = (e ^ {\log q_1})^{q_2} = e ^{(\log q_1)q_2}
+$$
+
+\n In Scheme,
+
+\q{
+(define expt|Q
+  (lambda (q1 q2)
+    (exp|Q (*|Q (log|Q q1) q2))))
+}
+ 
+\n The \q{sqrt|Q} function then is:
+
+\q{
+(define sqrt|Q
+  (lambda (q)
+    (expt|Q q 1/2)))
+}
+
+\section{Trigonometric functions}
+
+For $\sin q$ and $\cos q$,  we have
+(using the Maclaurin's series for $\sinh$ and $\cosh$): 
+
+$$
+\eqalign{
+\sin(w + uv) &= \sin w \cosh v + u \cos w \sinh v\cr
+\cos(w + uv) &= \cos w \cosh v - u \sin w \sinh v
+}
+$$
+
+\n In Scheme,\f{\q{sinh} and \q{cosh} for reals are not
+part of the Scheme standard~\cite{r5rs} but they
+can be readily defined using the
+identities 
+$$
+\eqalign{
+\sinh x &= (e^x - e^{-x})/2 \cr 
+\cosh x &= (e^x + e^{-x})/2 \cr
+}
+$$}
+
+\q{
+(define sin|Q
+  (lambda (q)
+    (let ((w (real-part|Q q)) 
+          (u (unit-vector q))
+          (v (magnitude|Q (vector-part q))))
+      (+|Q (*|Q (sin w) (cosh v))
+         (*|Q u (cos w) (sinh v))))))
+
+(define cos|Q
+  (lambda (q)
+    (let ((w (real-part|Q q)) 
+          (u (unit-vector q))
+          (v (magnitude|Q (vector-part q))))
+      (-|Q (*|Q (cos w) (cosh v))
+         (*|Q u (sin w) (sinh v))))))
+}
+
+\n  $\tan q$ can be defined as $(\sin q)/(\cos q)$.
+Since $\sin q$, and $\cos q$ have the same unit vector
+as $q$, the direction of the division doesn't
+matter.  
+
+\section{Inverse trigonometric functions}
+
+The following are derived 
+using Maclaurin's and straightforward quadratic solving:
+
+$$
+\eqalign{
+\sin^{-1} q &= - u \log (uq + \sqrt{1 - q^2}) \cr
+\cos^{-1} q &= - u \log (q + \sqrt{q^2 - 1}) \cr
+\tan^{-1} q &= {u\over 2} \log {u+q \over u-q}
+}
+$$
+
+\n In Scheme,
+
+\q{
+(define asin|Q
+  (lambda (q)
+    (let ((u (unit-vector q)))
+      (-|Q (*|Q u (log|Q (+|Q (*|Q u q)
+                              (sqrt|Q (-|Q 1 (*|Q q q))))))))))
+
+(define acos|Q
+  (lambda (q)
+    (let ((u (unit-vector q)))
+      (-|Q (*|Q u (log|Q (+|Q q 
+                              (sqrt|Q (-|Q (*|Q q q) 1)))))))))
+
+(define atan|Q
+  (lambda (q)
+    (let ((u (unit-vector q)))
+      (*|Q 1/2 u (log|Q (*|Q (+|Q u q) (/|Q (-|Q u q))))))))
+}
+  
+  
+  
+  
+\section{Signatures}
+
+The following collects the signatures of all the
+quaternion procedures proposed above.  The types {\em
+number} and {\em quaternion} are synonymous.  I shall
+use the name {\em quaternion} merely to emphasize that
+a function result can be a quaternion.  Arguments
+enclosed in brackets are optional.
+
+{\obeylines
+\q{quaternion?} : {\em any} \tu {\em boolean} 
+
+\q{real-part|Q} : {\em number} \tu {\em real} 
+\q{imag-part|Q} : {\em number} \tu {\em real}
+\q{jmag-part} : {\em number} \tu {\em real} 
+\q{kmag-part} : {\em number} \tu {\em real}
+
+\q{vector-part} : {\em number} \tu {\em quaternion}
+\q{unit-vector} : {\em number} \tu {\em quaternion}
+
+\q{magnitude|Q} : {\em number} \tu {\em real}
+\q{angle|Q} : {\em number} \tu {\em real}
+\q{colatitude} : {\em number} \tu {\em real}
+\q{longitude} : {\em number} \tu {\em real}
+
+\q{make-rectangular|Q} : {\em real} \tymes {\em real} [\tymes {\em real} \tymes {\em real}] \tu {\em quaternion}
+\q{make-polar|Q} :  {\em real} \tymes {\em real} [\tymes {\em real} \tymes {\em real}] \tu {\em quaternion}
+
+\q{+|Q} : {\em number}* \tu {\em quaternion}
+\q{-|Q} : {\em number}+ \tu {\em quaternion}
+\q{*|Q} : {\em number}* \tu {\em quaternion}
+\q{/|Q} : {\em number}+ \tu {\em quaternion}
+
+\q{dot-product} : {\em number} \tymes {\em number} \tu {\em real}
+\q{cross-product} : {\em number} \tymes {\em number} \tu {\em quaternion}
+\q{conjugate} : {\em number} \tu {\em quaternion}
+
+\q{exp|Q} : {\em number} \tu {\em quaternion}
+\q{log|Q} : {\em number} \tu {\em quaternion}
+\q{expt|Q} : {\em number} \tymes {\em number} \tu {\em quaternion}
+\q{sqrt|Q} : {\em number} \tu {\em quaternion}
+
+\q{sin|Q} : {\em number} \tu {\em quaternion}
+\q{cos|Q} : {\em number} \tu {\em quaternion}
+\q{tan|Q} : {\em number} \tu {\em quaternion}
+
+\q{asin|Q} : {\em number} \tu {\em quaternion}
+\q{acos|Q} : {\em number} \tu {\em quaternion}
+\q{atan|Q} : {\em number} \tu {\em quaternion}
+\q{atan} : {\em real} \tymes  {\em real} \tu {\em real} (two arguments)
+
+} 
+
+\section{References}
+
+\input squat-bib
+
+\bye

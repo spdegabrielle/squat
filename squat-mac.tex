@@ -1,0 +1,43 @@
+\input tex2page
+\input btxmac
+
+\overfullrule 0pt
+
+\sidemargin 1.75 true in
+
+\def\Q{$_q$}
+
+\def\meta[#1]{{\it #1\/}}
+
+
+\def\evalsto{$\Rightarrow$}
+
+\def\tu{$\to$ }
+
+\def\tymes{$\times$ }
+
+%\def\leftdisplay#1$${\leftline{\indent$\displaystyle{#1}$}$$}
+%\everydisplay{\leftdisplay}
+
+
+\ifx\shipout\UNDEFINED
+
+\imgpreamble
+\magnification\magstep2
+\endimgpreamble
+
+\dontuseimgforhtmlmathintext
+
+\def\evalsto{{\color{teal}\tt\bf=>} }
+
+\evalh{
+(for-each
+make-reusable-math-image-as-needed
+'(
+"\\theta" "\\pi" "\\phi" "\\psi"
+"\\to" "\\times"
+))
+}
+\fi
+
+

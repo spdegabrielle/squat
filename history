@@ -1,0 +1,10 @@
+Nov 11, 2001
+
+Nov 23, 2001
+
+A quaternion module ("language") defined for MzScheme
+
+Nov 26, 2001
+
+unit-vector should always return a unit vector,
+never 0.  Use +i as default return value. 
