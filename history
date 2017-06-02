@@ -8,3 +8,9 @@ Nov 26, 2001
 
 unit-vector should always return a unit vector,
 never 0.  Use +i as default return value. 
+
+Jun 3, 2017
+
+Test - Racket does not generate errors.
+
+
